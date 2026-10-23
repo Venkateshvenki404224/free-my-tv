@@ -10,6 +10,8 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Settings > WireGuard VPN turns WireGuard's tunnel on and off (granted with adb: see Vpn.java). -->
     <uses-permission android:name="com.wireguard.android.permission.CONTROL_TUNNELS" />
+    <!-- MessageReceiver's banner over other apps (allowed with adb: appops set io.venkitv SYSTEM_ALERT_WINDOW allow). -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <!-- Android 11+: without this list the app can't "see" the other apps (getLeanbackLaunchIntentForPackage
          returns null). The shelf and streaming apps, the live TV apps and, through the <intent>, every TV app
@@ -154,6 +156,17 @@
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+        <!-- A message over the screen, sent with adb (MessageReceiver.java). DUMP: only the shell can send it. In :home,
+             the launcher's process, which stays alive: in the main process the banner died with it within a second. -->
+        <receiver
+            android:name=".MessageReceiver"
+            android:process=":home"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="io.venkitv.MESSAGE" />
             </intent-filter>
         </receiver>
     </application>
