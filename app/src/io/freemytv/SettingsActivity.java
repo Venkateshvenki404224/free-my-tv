@@ -113,11 +113,11 @@ public class SettingsActivity extends Activity {
     }
 
     static final class SettingsView extends View implements Choreographer.FrameCallback {
-        private static final int MAIN = 0, HOME_CHOICE = 1, HOME_SETTINGS = 2, REMOTE_KEYS = 3, PICKER = 4, SHELF_EDIT = 5;
+        private static final int MAIN = 0, HOME_CHOICE = 1, HOME_SETTINGS = 2, REMOTE_KEYS = 3, PICKER = 4, SHELF_EDIT = 5, PICKS = 6;
         private static final float LIST_ROW_H = 68, LIST_ROW_GAP = 6;
         private static final int PICK_VISIBLE = 9;
         private static final float LIST_X = 1000, LIST_R = 1824, LIST_TOP = 186, ROW_GAP = 8, CHOICE_H = 104;
-        // The main menu: seven rows, then the comparison, the picks (with the Watchmode credit) and two notices, all on
+        // The main menu: eight rows, then the comparison, the picks (with the Watchmode credit) and two notices, all on
         // one 1080 px screen.
         private static final float MAIN_TOP = 140, ROW_H = 62, MAIN_GAP = 4;
         private static final int AMBER = 0xFFFFC266, INK = 0xFF1C1C1E;
@@ -133,6 +133,8 @@ public class SettingsActivity extends Activity {
         // order) and the selection.
         private final List<String[]> shelfRows = new ArrayList<>();
         private final List<String> shelfOrder = new ArrayList<>();
+        // Picks: the languages, then the genres, as {"language" or "genre", key, name}; ticked ones limit the picks.
+        private final List<String[]> pickRows = new ArrayList<>();
         private boolean editingTop;
         private int pickFor, pickCurrent, pickScroll;   // pickFor: the remote button (index + 1)
         private static final int PICK_CITY = 0, PICK_LANGUAGE = -1;
@@ -215,7 +217,8 @@ public class SettingsActivity extends Activity {
                         return Ui.trf("Home Screen, {mode}", "mode", value);
                     }
                     String[] names = {Ui.tr("Screensaver, preview"), Ui.tr("Home Settings"),
-                            Ui.tr("Shelf"), Ui.tr("Top Buttons"), Ui.tr("Remote Buttons"), Ui.tr("TV Settings")};
+                            Ui.tr("Shelf"), Ui.tr("Top Buttons"), Ui.tr("Remote Buttons"),
+                            Ui.tr("WireGuard VPN") + ", " + vpnValue(), Ui.tr("TV Settings")};
                     return row - 1 < names.length ? names[row - 1] : "";
                 }
                 case HOME_CHOICE: {
@@ -247,6 +250,11 @@ public class SettingsActivity extends Activity {
                     }
                     return app[1] + ", " + (place >= 0 ? Ui.trf("on the shelf, place {n}", "n", place + 1)
                             : Ui.tr("not on the shelf"));
+                }
+                case PICKS: {
+                    int at = pickScroll + row;
+                    if (at >= pickRows.size()) return "";
+                    return pickRows.get(at)[2] + ", " + (ticked(pickRows.get(at)) ? Ui.tr("On") : Ui.tr("Off"));
                 }
                 default:
                     return "";
@@ -341,11 +349,12 @@ public class SettingsActivity extends Activity {
 
         private int rowCount() {
             switch (screen) {
-                case MAIN: return 7;
+                case MAIN: return 8;
                 case HOME_CHOICE: return 2;
                 case HOME_SETTINGS: return settingLabels().length;
                 case PICKER: return Math.min(PICK_VISIBLE, pickLabels.size());
                 case SHELF_EDIT: return Math.min(PICK_VISIBLE, shelfRows.size());
+                case PICKS: return Math.min(PICK_VISIBLE, pickRows.size());
                 default: return Prefs.KEYS.length;
             }
         }
@@ -374,7 +383,7 @@ public class SettingsActivity extends Activity {
             c.drawText(Ui.tr("Your TV's home screen and screensaver"), cx, 660 * k, subtitle);
             c.drawText(versionName(getContext()), cx, 704 * k, version);
 
-            if (screen == MAIN) drawMain(c, seconds); else if (screen == HOME_CHOICE) drawChoice(c); else if (screen == PICKER) drawPicker(c); else if (screen == SHELF_EDIT) drawShelfEditor(c); else drawList(c);
+            if (screen == MAIN) drawMain(c, seconds); else if (screen == HOME_CHOICE) drawChoice(c); else if (screen == PICKER) drawPicker(c); else if (screen == SHELF_EDIT) drawShelfEditor(c); else if (screen == PICKS) drawPicks(c); else drawList(c);
         }
 
         private void drawMain(Canvas c, float seconds) {
@@ -383,8 +392,8 @@ public class SettingsActivity extends Activity {
             String mode = freeActive() ? "Free My TV" : Ui.tr("Original");
             String[] labels = {Ui.tr("Home Screen"), Ui.tr("Screensaver"),
                     Ui.tr("Home Settings"), Ui.tr("Shelf"), Ui.tr("Top Buttons"),
-                    Ui.tr("Remote Buttons"), Ui.tr("TV Settings")};
-            String[] values = {working ? "" : mode, Ui.tr("Preview"), "", "", "", "", ""};
+                    Ui.tr("Remote Buttons"), Ui.tr("WireGuard VPN"), Ui.tr("TV Settings")};
+            String[] values = {working ? "" : mode, Ui.tr("Preview"), "", "", "", "", vpnValue(), ""};
             for (int i = 0; i < labels.length; i++) {
                 float y = (MAIN_TOP + i * (ROW_H + MAIN_GAP)) * k;
                 rowRect.set(LIST_X * k, y, LIST_R * k, y + ROW_H * k);
@@ -394,7 +403,7 @@ public class SettingsActivity extends Activity {
                 float base = rowRect.centerY() + Ui.halfCap(rowLabel);
                 c.drawText(labels[i], rowRect.left + 30 * k, base, rowLabel);
                 float right = rowRect.right - 30 * k;
-                if (i >= 2) {
+                if (i >= 2 && i != VPN_ROW) {
                     float cw = Symbols.width(getContext(), "chevron_right", 22 * k);
                     Symbols.draw(getContext(), c, "chevron_right", right - cw / 2, rowRect.centerY(), 22 * k, blend(0x66FFFFFF, 0x991C1C1E, f));
                 } else if (i == 0 && working) {
@@ -612,7 +621,10 @@ public class SettingsActivity extends Activity {
                         if (e.getRepeatCount() == 0) backDown = true;
                     } else {
                         if (backDown && !e.isCanceled()) {
-                            if (screen == PICKER && (pickFor == PICK_CITY || pickFor == PICK_LANGUAGE)) {
+                            if (screen == PICKS) {
+                                focus = PICKS_ROW;
+                                screen = HOME_SETTINGS;
+                            } else if (screen == PICKER && (pickFor == PICK_CITY || pickFor == PICK_LANGUAGE)) {
                                 focus = pickFor == PICK_CITY ? CITY_ROW : 0;
                                 screen = HOME_SETTINGS;
                             } else if (screen == PICKER) {
@@ -637,8 +649,8 @@ public class SettingsActivity extends Activity {
         // MARK: - Home Settings and Remote Buttons
 
         private static final String[] UNITS = {"auto", "C", "F"}, THEMES = {"auto", "light", "dark"};
-        /** Home Settings: language, temperature, theme, sounds, weather, city, quotes, then one row per coin. */
-        private static final int CITY_ROW = 5, COIN_ROWS = 7;
+        /** Home Settings: language, temperature, theme, sounds, weather, city, picks, quotes, then one row per coin. */
+        private static final int CITY_ROW = 5, PICKS_ROW = 6, QUOTES_ROW = 7, COIN_ROWS = 8;
 
         private boolean dollar() {
             return "BRL".equalsIgnoreCase(Config.CURRENCY.trim());
@@ -652,6 +664,7 @@ public class SettingsActivity extends Activity {
             l.add(Ui.tr("Navigation sounds"));
             l.add(Ui.tr("Weather widget"));
             l.add(Ui.tr("City"));
+            l.add(Ui.tr("Picks"));
             l.add(Ui.tr("Quotes widget"));
             l.add("Bitcoin");
             l.add("Ethereum");
@@ -672,7 +685,8 @@ public class SettingsActivity extends Activity {
             v[3] = onOff(Prefs.sounds());
             v[4] = onOff(Prefs.weather());
             v[CITY_ROW] = !cityStatus.isEmpty() ? cityStatus : Prefs.city().isEmpty() ? "—" : Prefs.city();
-            v[6] = onOff(Prefs.quotes());
+            v[PICKS_ROW] = picksSummary();
+            v[QUOTES_ROW] = onOff(Prefs.quotes());
             // No quotes widget, nowhere to show prices: the coins read as off (and stay locked) until it is back on.
             for (int i = COIN_ROWS; i < v.length; i++) v[i] = onOff(Prefs.quotes() && Prefs.coin(i - COIN_ROWS));
             return v;
@@ -752,8 +766,8 @@ public class SettingsActivity extends Activity {
                 }
                 case 3: Prefs.setSounds(!Prefs.sounds()); break;
                 case 4: Prefs.setWeather(!Prefs.weather()); break;
-                case CITY_ROW: return;
-                case 6: Prefs.setQuotes(!Prefs.quotes()); break;
+                case CITY_ROW: case PICKS_ROW: return;
+                case QUOTES_ROW: Prefs.setQuotes(!Prefs.quotes()); break;
                 default:
                     if (!Prefs.quotes()) return;
                     Prefs.setCoin(focus - COIN_ROWS, !Prefs.coin(focus - COIN_ROWS));
@@ -814,11 +828,108 @@ public class SettingsActivity extends Activity {
         }
 
         private boolean scrolling() {
-            return screen == PICKER || screen == SHELF_EDIT;
+            return screen == PICKER || screen == SHELF_EDIT || screen == PICKS;
         }
 
         private int listSize() {
-            return screen == SHELF_EDIT ? shelfRows.size() : pickLabels.size();
+            return screen == SHELF_EDIT ? shelfRows.size() : screen == PICKS ? pickRows.size() : pickLabels.size();
+        }
+
+        // MARK: - WireGuard VPN (Vpn.java)
+
+        private static final int VPN_ROW = 6;
+        private boolean vpnWant;
+        private long vpnUntil;   // until then, the switch is on its way to vpnWant
+
+        /** On or Off as the TV's network says, or the way it's going right after OK. */
+        private String vpnValue() {
+            Context c = getContext();
+            if (!Vpn.installed(c)) return Ui.tr("Not installed");
+            boolean up = Vpn.up(c);
+            if (up != vpnWant && SystemClock.uptimeMillis() < vpnUntil) return vpnWant ? Ui.tr("Turning on…") : Ui.tr("Turning off…");
+            return onOff(up);
+        }
+
+        private void toggleVpn() {
+            Context c = getContext();
+            if (!Vpn.installed(c)) return;
+            vpnWant = !Vpn.up(c);
+            vpnUntil = SystemClock.uptimeMillis() + 8000;
+            Vpn.set(c, vpnWant);
+            for (long ms : new long[] {500, 1500, 3000, 5000, 8100}) handler.postDelayed(this::invalidate, ms);
+            invalidate();
+        }
+
+        // MARK: - Picks (the genres and languages the home screen's picks come from)
+
+        /** "All", or what is ticked: "Kannada · Thriller, Crime", "2 languages · 3 genres". */
+        private static String picksSummary() {
+            List<String> parts = new ArrayList<>();
+            String langs = names(Recs.LANGUAGES, 0, 1, Prefs.pickLanguages(), "plural|one:{n} language|other:{n} languages");
+            String genres = names(Recs.GENRES, 0, 1, Prefs.pickGenres(), "plural|one:{n} genre|other:{n} genres");
+            if (!langs.isEmpty()) parts.add(langs);
+            if (!genres.isEmpty()) parts.add(genres);
+            return parts.isEmpty() ? Ui.tr("All") : String.join(" · ", parts);
+        }
+
+        /** Up to two ticked names (without the native spelling), or how many. */
+        private static String names(String[][] table, int keyAt, int nameAt, java.util.Set<String> ticked, String many) {
+            if (ticked.isEmpty()) return "";
+            if (ticked.size() > 2) return Ui.plural(many, ticked.size());
+            List<String> out = new ArrayList<>();
+            for (String[] row : table) if (ticked.contains(row[keyAt])) out.add(row[nameAt].split(" · ")[0]);
+            return String.join(", ", out);
+        }
+
+        private void openPicks() {
+            pickRows.clear();
+            for (String[] l : Recs.LANGUAGES) pickRows.add(new String[] {"language", l[0], l[1]});
+            for (String[] g : Recs.GENRES) pickRows.add(new String[] {"genre", g[0], Ui.tr("genre|" + g[1])});
+            pickScroll = 0;
+            focus = 0;
+            screen = PICKS;
+        }
+
+        private static boolean ticked(String[] row) {
+            return (row[0].equals("language") ? Prefs.pickLanguages() : Prefs.pickGenres()).contains(row[1]);
+        }
+
+        /** OK: ticks the row or unticks it; the home screen fetches new picks when it is back. */
+        private void togglePick() {
+            String[] row = pickRows.get(pickScroll + focus);
+            boolean language = row[0].equals("language");
+            java.util.Set<String> set = language ? Prefs.pickLanguages() : Prefs.pickGenres();
+            if (!set.remove(row[1])) set.add(row[1]);
+            if (language) Prefs.setPickLanguages(set); else Prefs.setPickGenres(set);
+        }
+
+        private void drawPicks(Canvas c) {
+            Paint heading = Ui.text(Ui.displaySemibold, 34 * k, 0xFFFFFFFF);
+            c.drawText(Ui.tr("Picks"), LIST_X * k + 30 * k, (LIST_TOP - 24) * k, heading);
+            int rows = rowCount();
+            for (int i = 0; i < rows; i++) {
+                String[] row = pickRows.get(pickScroll + i);
+                boolean on = ticked(row);
+                float y = (LIST_TOP + 20 + i * (LIST_ROW_H + LIST_ROW_GAP)) * k;
+                rowRect.set(LIST_X * k, y, LIST_R * k, y + LIST_ROW_H * k);
+                float f = drawRowBackground(c, i);
+                rowLabel.setColor(blend(on ? 0xF2FFFFFF : 0x80FFFFFF, on ? INK : 0x801C1C1E, f));
+                rowValue.setColor(blend(0x8CFFFFFF, 0x8C1C1C1E, f));
+                float base = rowRect.centerY() + Ui.halfCap(rowLabel);
+                c.drawText(row[2], rowRect.left + 30 * k, base, rowLabel);
+                float right = rowRect.right - 30 * k;
+                String kind = row[0].equals("language") ? Ui.tr("Language") : Ui.tr("Genre");
+                c.drawText(kind, right, base, rowValue);
+                if (on) {
+                    float cw = Symbols.width(getContext(), "check", 26 * k);
+                    Symbols.draw(getContext(), c, "check", right - rowValue.measureText(kind) - 24 * k - cw / 2, rowRect.centerY(),
+                            26 * k, blend(0xFFFFFFFF, INK, f));
+                }
+            }
+            Paint hint = Ui.text(Ui.regular, 23 * k, 0x8CFFFFFF);
+            float hy = (LIST_TOP + 20 + rows * (LIST_ROW_H + LIST_ROW_GAP) + 36) * k;
+            c.drawText((pickScroll + focus + 1) + " / " + pickRows.size() + "  ·  " + Ui.tr("OK ticks or unticks. Nothing ticked: everything."),
+                    LIST_X * k + 30 * k, hy, hint);
         }
 
         // MARK: - Shelf editor
@@ -1017,6 +1128,12 @@ public class SettingsActivity extends Activity {
                 toggleShelfApp();
                 invalidate();
                 return;
+            } else if (screen == PICKS) {
+                togglePick();
+                invalidate();
+                return;
+            } else if (screen == HOME_SETTINGS && focus == PICKS_ROW) {
+                openPicks();
             } else if (screen == REMOTE_KEYS) {
                 openPicker(focus + 1);
             } else if (screen == HOME_SETTINGS && focus == 0) {
@@ -1047,6 +1164,9 @@ public class SettingsActivity extends Activity {
                 loadApps();
                 screen = REMOTE_KEYS;
                 focus = 0;
+            } else if (focus == VPN_ROW) {
+                toggleVpn();
+                return;
             } else {
                 activity.startActivity(new Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
             }

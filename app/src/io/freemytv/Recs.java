@@ -57,6 +57,32 @@ final class Recs {
     private static final String IMAGES = "https://image.tmdb.org/t/p/" + (Backdrop.W <= 1280 ? "w1280" : "original");
     /** TMDB's Animation genre (movies and shows: cartoons and anime), left out with hide_animation=true. */
     private static final int ANIMATION = 16;
+    /**
+     * The genres the picks can be limited to (Home Settings > Picks), as {key, name, movie genre ids, show genre ids}:
+     * TMDB numbers movie and show genres apart, and some have no show genre ("" = no shows of that genre).
+     */
+    static final String[][] GENRES = {
+        {"action", "Action & Adventure", "28|12", "10759"},
+        {"comedy", "Comedy", "35", "35"},
+        {"crime", "Crime", "80", "80"},
+        {"drama", "Drama", "18", "18"},
+        {"thriller", "Thriller", "53", "9648"},   // shows have no Thriller: Mystery is the nearest
+        {"horror", "Horror", "27", ""},
+        {"romance", "Romance", "10749", ""},
+        {"mystery", "Mystery", "9648", "9648"},
+        {"scifi", "Sci-Fi & Fantasy", "878|14", "10765"},
+        {"family", "Family & Kids", "10751", "10751|10762"},
+        {"animation", "Animation", "16", "16"},
+        {"documentary", "Documentary", "99", "99"},
+        {"history", "History & War", "36|10752", "10768"},
+        {"reality", "Reality", "", "10764"},
+    };
+    /** The original languages the picks can be limited to, as {TMDB code, name}. */
+    static final String[][] LANGUAGES = {
+        {"kn", "Kannada · ಕನ್ನಡ"}, {"hi", "Hindi · हिन्दी"}, {"ta", "Tamil · தமிழ்"}, {"te", "Telugu · తెలుగు"},
+        {"ml", "Malayalam · മലയാളം"}, {"en", "English"}, {"ko", "Korean · 한국어"}, {"ja", "Japanese · 日本語"},
+        {"es", "Spanish · Español"},
+    };
     private static final long LIST_EVERY = 6 * 3600_000L;
     /** Bump when what is saved for each title changes (the saved list is discarded and fetched again). */
     private static final int CACHE_VERSION = 3;
@@ -249,7 +275,7 @@ final class Recs {
     void refreshIfStale() {
         if (!hasKey(context) || fetching) return;
         long now = System.currentTimeMillis();
-        long stamp = sourceStamp();   // a new key, country, animation choice or installed streaming-app set refetches
+        long stamp = sourceStamp();   // a new key, country, animation choice, picked genres or languages, or installed streaming-app set refetches
         boolean newKey = stamp != keyStamp;
         long sinceFail = now - failedAt;    // negative = the clock went back: don't wait
         if (!newKey && failedAt != 0 && sinceFail >= 0 && sinceFail < 10 * 60_000L) return;
@@ -401,9 +427,14 @@ final class Recs {
         if (services.isEmpty()) throw new IOException(NO_APPS);
         StringBuilder ids = new StringBuilder();
         for (int id : services.keySet()) ids.append(ids.length() == 0 ? "" : "|").append(id);
+        // The languages picked on the TV: few titles each (Kannada has a handful a year on the big services), so the
+        // releases reach further back and need fewer votes.
+        String languages = String.join("|", Prefs.pickLanguages());
+        boolean narrow = !languages.isEmpty();
         String common = "&language=" + lang() + "&watch_region=" + REGION + "&with_watch_monetization_types=flatrate&include_adult=false"
                 + "&sort_by=popularity.desc&with_watch_providers=" + URLEncoder.encode(ids.toString(), "UTF-8")
-                + (Config.HIDE_ANIMATION ? "&without_genres=" + ANIMATION : "");
+                + (Config.HIDE_ANIMATION ? "&without_genres=" + ANIMATION : "")
+                + (narrow ? "&with_original_language=" + URLEncoder.encode(languages, "UTF-8") : "");
         // 1. Trending this week (TMDB goes by what people are watching and searching for right now), only what is
         //    on one of the TV's services: the details say where (and are then ready).
         List<Pick> hotMovies = new ArrayList<>(), hotShows = new ArrayList<>();
@@ -422,10 +453,14 @@ final class Recs {
         }
         // 2. Recent releases on the TV's services: movies from the past year and shows with a new episode in the
         //    past 3 months.
-        JSONArray movies = get("/discover/movie?vote_count.gte=30&primary_release_date.gte=" + day(-365)
-                + "&primary_release_date.lte=" + day(0) + common).getJSONArray("results");
-        JSONArray shows = get("/discover/tv?vote_count.gte=20&air_date.gte=" + day(-90) + "&air_date.lte=" + day(0)
-                + common).getJSONArray("results");
+        //    Limited to the genres picked on the TV; a kind none of them has (Horror shows) is left out.
+        String movieGenres = genreFilter("movie"), showGenres = genreFilter("tv");
+        JSONArray movies = movieGenres == null ? new JSONArray()
+                : get("/discover/movie?vote_count.gte=" + (narrow ? 5 : 30) + "&primary_release_date.gte=" + day(narrow ? -1095 : -365)
+                + "&primary_release_date.lte=" + day(0) + common + genreParam(movieGenres)).getJSONArray("results");
+        JSONArray shows = showGenres == null ? new JSONArray()
+                : get("/discover/tv?vote_count.gte=" + (narrow ? 0 : 20) + "&air_date.gte=" + day(narrow ? -365 : -90) + "&air_date.lte=" + day(0)
+                + common + genreParam(showGenres)).getJSONArray("results");
         List<Pick> newMovies = new ArrayList<>(), newShows = new ArrayList<>();
         for (int i = 0; i < movies.length(); i++) add(newMovies, movies.getJSONObject(i), "movie");
         for (int i = 0; i < shows.length(); i++) add(newShows, shows.getJSONObject(i), "tv");
@@ -470,12 +505,45 @@ final class Recs {
         String backdrop = o.optString("backdrop_path", "");
         if (backdrop.isEmpty() || "null".equals(backdrop)) return;
         if (Config.HIDE_ANIMATION && animated(o)) return;
+        if (!picked(o, kind)) return;
         Pick p = new Pick();
         p.id = o.optInt("id");
         p.kind = kind;
         p.title = o.optString(kind.equals("movie") ? "title" : "name");
         p.backdrop = backdrop;
         list.add(p);
+    }
+
+    /**
+     * TMDB's genre ids ("28|12|35") for the genres picked on the TV, for movies or shows: "" = no genre picked (all),
+     * null = none of the picked ones has titles of that kind.
+     */
+    private static String genreFilter(String kind) {
+        Set<String> picked = Prefs.pickGenres();
+        if (picked.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        for (String[] g : GENRES) {
+            String ids = g[kind.equals("movie") ? 2 : 3];
+            if (picked.contains(g[0]) && !ids.isEmpty()) sb.append(sb.length() == 0 ? "" : "|").append(ids);
+        }
+        return sb.length() == 0 ? null : sb.toString();
+    }
+
+    private static String genreParam(String ids) throws IOException {
+        return ids.isEmpty() ? "" : "&with_genres=" + URLEncoder.encode(ids, "UTF-8");
+    }
+
+    /** A title in one of the genres and languages picked on the TV (or nothing picked): trending ones are checked here. */
+    private static boolean picked(JSONObject o, String kind) {
+        Set<String> languages = Prefs.pickLanguages();
+        if (!languages.isEmpty() && !languages.contains(o.optString("original_language"))) return false;
+        String ids = genreFilter(kind);
+        if (ids == null) return false;
+        if (ids.isEmpty()) return true;
+        Set<String> wanted = new HashSet<>(Arrays.asList(ids.split("\\|")));
+        JSONArray genres = o.optJSONArray("genre_ids");
+        for (int i = 0; genres != null && i < genres.length(); i++) if (wanted.contains(String.valueOf(genres.optInt(i)))) return true;
+        return false;
     }
 
     private static boolean animated(JSONObject o) {
@@ -604,6 +672,7 @@ final class Recs {
 
     private long sourceStamp() {
         long stamp = (Config.TMDB_KEY.hashCode() * 31L + REGION.hashCode()) * 31L + (Config.HIDE_ANIMATION ? 1 : 0);
+        stamp = (stamp * 31L + Prefs.pickGenres().hashCode()) * 31L + Prefs.pickLanguages().hashCode();
         for (String[] service : SERVICES) stamp = stamp * 31L + (installed(service[2]) ? service[2].hashCode() : 0);
         return stamp;
     }

@@ -13,6 +13,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * Settings changed on the TV itself (Free My TV > Settings). config.properties only gives the first
@@ -121,6 +123,29 @@ final class Prefs {
 
     static boolean coin(int i) { return sp().getBoolean("coin" + i, true); }
     static void setCoin(int i, boolean on) { put("coin" + i, on); }
+
+    // MARK: - Picks
+
+    /** The genres (Recs.GENRES keys) the picks are limited to; empty = all of them. */
+    static Set<String> pickGenres() { return keys("pickGenres"); }
+    static void setPickGenres(Set<String> keys) { putKeys("pickGenres", keys); }
+
+    /** The original languages (TMDB codes, Recs.LANGUAGES) the picks are limited to; empty = any. */
+    static Set<String> pickLanguages() { return keys("pickLanguages"); }
+    static void setPickLanguages(Set<String> codes) { putKeys("pickLanguages", codes); }
+
+    private static Set<String> keys(String pref) {
+        Set<String> out = new TreeSet<>();
+        if (app == null) return out;
+        for (String p : sp().getString(pref, "").split(",")) if (!p.isEmpty()) out.add(p);
+        return out;
+    }
+
+    private static void putKeys(String pref, Set<String> keys) {
+        StringBuilder sb = new StringBuilder();
+        for (String p : new TreeSet<>(keys)) sb.append(sb.length() == 0 ? "" : ",").append(p);
+        put(pref, sb.toString());
+    }
 
     // MARK: - Shelf
 

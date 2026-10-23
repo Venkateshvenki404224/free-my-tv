@@ -277,12 +277,9 @@ final class HomeApps {
         return it;
     }
 
-    /** For the bottom drawer: live TV and every HDMI input (the ones with no device are shown dimmed). */
+    /** For the bottom drawer: every AV and HDMI input (the ones with no device are shown dimmed). No Live TV: the dish is on AV. */
     static List<Item> allInputs(Context c) {
-        List<Item> items = new ArrayList<>();
-        if (liveTv(c) != null) items.add(shortcut(LIVE_TV, "live", Ui.tr("Live TV"), "tv"));
-        items.addAll(inputs(c, true));
-        return items;
+        return inputs(c, true);
     }
 
     private static List<Item> inputs(Context c) {
@@ -290,7 +287,7 @@ final class HomeApps {
     }
 
     /**
-     * HDMI inputs: only the ones with a device sending a signal (or all of them, with `all`). A name you gave the input
+     * HDMI and AV inputs: only the ones with a device sending a signal (or all of them, with `all`). A name you gave the input
      * in the TV's settings is used as the label; without one, the name the device reports over HDMI-CEC ("PlayStation 5").
      * The icon follows what that name says the device is (see deviceSymbol).
      */
@@ -299,11 +296,14 @@ final class HomeApps {
         TvInputManager tim = (TvInputManager) c.getSystemService(Context.TV_INPUT_SERVICE);
         if (tim == null) return out;
         List<TvInputInfo> list = new ArrayList<>();
+        // The AV (composite) inputs, before the HDMI ones: a dish or cable box on the yellow plug.
+        List<TvInputInfo> av = new ArrayList<>();
         // A device that talks HDMI-CEC gets its own input, a child of the port's, named after the device: port input id
         // -> that name.
         Map<String, String> devices = new HashMap<>();
         try {
             for (TvInputInfo info : tim.getTvInputList()) {
+                if (info.getType() == TvInputInfo.TYPE_COMPOSITE && info.getParentId() == null) av.add(info);
                 if (info.getType() != TvInputInfo.TYPE_HDMI) continue;
                 if (info.getParentId() == null) {
                     list.add(info);
@@ -346,6 +346,29 @@ final class HomeApps {
             out.add(it);
         }
         Collections.sort(out, (a, b) -> a.number.compareTo(b.number));
+        Collections.sort(av, (a, b) -> a.getId().compareTo(b.getId()));
+        int at = 0;
+        for (int i = 0; i < av.size(); i++) {
+            TvInputInfo info = av.get(i);
+            int state = TvInputManager.INPUT_STATE_DISCONNECTED;
+            try {
+                state = tim.getInputState(info.getId());
+            } catch (RuntimeException ignored) {
+            }
+            if (!all && state != TvInputManager.INPUT_STATE_CONNECTED) continue;
+            CharSequence custom = null;
+            try {
+                custom = info.loadCustomLabel(c);
+            } catch (RuntimeException ignored) {
+            }
+            String name = av.size() > 1 ? "AV " + (i + 1) : "AV";
+            String label = custom != null && custom.length() > 0 ? custom.toString() : name;
+            Item it = shortcut(INPUT, "av" + (i + 1), label, custom != null ? deviceSymbol(label) : "tv");
+            it.inputId = info.getId();
+            it.number = name;
+            it.connected = state == TvInputManager.INPUT_STATE_CONNECTED;
+            out.add(at++, it);
+        }
         return out;
     }
 
