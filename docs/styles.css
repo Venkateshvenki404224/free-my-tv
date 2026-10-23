@@ -17,9 +17,9 @@
   --stroke: rgba(255, 255, 255, 0.8);
   --shadow-1: 0 1px 2px rgba(20, 16, 40, 0.05), 0 10px 30px rgba(20, 16, 40, 0.06);
   --shadow-2: 0 2px 8px rgba(20, 16, 40, 0.05), 0 40px 90px -20px rgba(50, 30, 90, 0.22);
-  --dusk: linear-gradient(100deg, #ff9f5a 0%, #ff5f9e 50%, #8c7cff 100%);
-  --sun: linear-gradient(100deg, #ffb86b 0%, #ff7a59 48%, #ff5fa2 100%);
-  --sky: linear-gradient(100deg, #5ac8fa 0%, #7c8cff 55%, #b48cff 100%);
+  --dusk: linear-gradient(100deg, #5ac8fa 0%, #3a82d6 50%, #1f5fbf 100%);
+  --sun: linear-gradient(100deg, #8fd3ff 0%, #4fa3ef 48%, #2f6fcf 100%);
+  --sky: linear-gradient(100deg, #5ac8fa 0%, #3a82d6 55%, #1e57c8 100%);
   --mint: linear-gradient(100deg, #30d158 0%, #2fc6a2 50%, #5ac8fa 100%);
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
   --max: 1180px;
@@ -69,7 +69,7 @@ p {
 }
 
 :focus-visible {
-  outline: 3px solid #7c8cff;
+  outline: 3px solid #3a82d6;
   outline-offset: 3px;
   border-radius: 8px;
 }
@@ -97,19 +97,19 @@ p {
 .b1 {
   left: -18vmax;
   top: -22vmax;
-  background: radial-gradient(circle, #ffc9a0 0%, rgba(255, 201, 160, 0) 70%);
+  background: radial-gradient(circle, #bfe0ff 0%, rgba(191, 224, 255, 0) 70%);
 }
 
 .b2 {
   right: -20vmax;
   top: 10vmax;
-  background: radial-gradient(circle, #d9d2ff 0%, rgba(217, 210, 255, 0) 70%);
+  background: radial-gradient(circle, #cfdcff 0%, rgba(207, 220, 255, 0) 70%);
 }
 
 .b3 {
   left: 20vmax;
   bottom: -30vmax;
-  background: radial-gradient(circle, #ffd0e6 0%, rgba(255, 208, 230, 0) 70%);
+  background: radial-gradient(circle, #d3ecff 0%, rgba(211, 236, 255, 0) 70%);
 }
 
 /* ---------- Navigation ---------- */
@@ -1005,7 +1005,7 @@ h2 {
 }
 
 .code.prompt {
-  background: linear-gradient(100deg, #2b1f2e, #1f1f2e);
+  background: linear-gradient(100deg, #0f2452, #081633);
 }
 
 .code.prompt code {

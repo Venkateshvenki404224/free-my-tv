@@ -1,10 +1,10 @@
 {
-  "id": "io.freemytv",
+  "id": "io.venkitv",
   "version": "1.1.0",
-  "vendor": "Free My TV",
+  "vendor": "Venki TV",
   "type": "web",
   "main": "index.html",
-  "title": "Free My TV",
+  "title": "Venki TV",
   "icon": "icon.png",
   "largeIcon": "largeIcon.png",
   "iconColor": "#FF7A9E",
